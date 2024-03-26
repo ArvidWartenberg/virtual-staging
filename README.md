@@ -1,8 +1,9 @@
 # virtual-staging
 This repository leverages stable diffusion for performing virtual staging. This goal is to build a model which can furnish empty rooms:
+
 <img width="597" alt="image" src="https://github.com/ArvidWartenberg/virtual-staging/assets/40557722/8c042d3d-8b28-42b0-a8a3-0f3e7908bda4">
 
-Image source: Virtual Staging AI (https://www.virtualstagingai.app/)
+Image source: [Virtual Staging AI](https://www.virtualstagingai.app/)
 
 The solution in this repository is not mature, and only serves as a very basic PoC.
 
@@ -33,9 +34,53 @@ Next, the figure below shows the Inpainting ControlNet in a bit more detail.
 
 For this step, a "furniture agnostic" image representation of the scene is computed by masking out the pixels predicted to be "furnished" by the scene layout generator in the empty image. The ControlNet takes the agnostic image as conditional input. The prompt is given according to the same logic as for the initial scene generator.
 
+## Training details
+I only trained and evaluated using the [paired dataset](https://virtualstaging-ai.notion.site/Research-Engineer-Technical-Challenge-virtual-staging-295e57ca58b4434ebee1610bc38aa774) with 501 empty-staged samples provided by Virtual Staging AI. I randomly split the data into 491 pairs for training, and 10 for evaluation (only visual inspection)
 
-## Discussion
-The logic behond the two-stage approach is that the first-stage inpainting might add and/or replace more semantic information in the original scene than we wish. By exctracting semantic information based on certain object classes as an intermediate step, we can conduct the second furnishing stage in a way where we have more semantic conditional control such that we can avoid painting features that we do not want.
+For both the initial and second stage ControlNets I used ["v1-5-pruned.ckpt"](https://huggingface.co/runwayml/stable-diffusion-v1-5/blob/main/v1-5-pruned.ckpt) as the pretrained latent stable diffusion "backbone", and attaching ["control_v11p_sd15_inpaint.pth"](https://huggingface.co/lllyasviel/ControlNet-v1-1/blob/main/control_v11p_sd15_inpaint.pth
+), a ControlNet that was pretrained for inpainting. This allowed me to get some results with the limited data available as the models were able to very quickly adapt to their tasks.
+
+For compute I rented an A6000 server. I fine-tuned both controlnets on the training set for 2 epochs, using batch size 4 and lr 5e-6. This only took ~10 minutes.
+
+## Results & Observations
+The models learned their respective tasks astonishingly quickly. The image below shows how input/output pairs for the initial scene generator at the first batch, and after 100 batches.
+
+<img width="579" alt="image" src="https://github.com/ArvidWartenberg/virtual-staging/assets/40557722/8599e1eb-0e10-43f2-80d3-4e56bc928be6">
+
+In the image we see that initially, the model just "copy pastes" the control, but after only 100 batches it manages to output meaningful staged scenes while managing to maintain large parts of the scene structure. Similar observations were made for the second inpainting stage.
+
+With the delimitations mentioned previously (e.g. no custom prompts, ...), below are some examples of images (alongside intermediate images/data representations) generated using the inference pipeline. These images are generated only based on the empty scenes from the validation split, and dont draw any explicit or implicit information from the corresponding staged image (e.g., not using caption extracted from the staged image).
+
+<img width="1193" alt="Screenshot 2024-03-26 at 19 33 14" src="https://github.com/ArvidWartenberg/virtual-staging/assets/40557722/50d932dc-6839-4159-a9e3-ae6a3f269b6d">
+<img width="1193" alt="Screenshot 2024-03-26 at 19 33 26" src="https://github.com/ArvidWartenberg/virtual-staging/assets/40557722/b0b1979a-2e69-4a07-ae58-a2e146db8c67">
+<img width="1193" alt="Screenshot 2024-03-26 at 19 33 32" src="https://github.com/ArvidWartenberg/virtual-staging/assets/40557722/a5ec2691-3dd3-4a85-a30a-1501a7a53ba7">
+
+
+Woo! The PoC sort of works. I mean, not ready for a commercial setting but the following is clear from the images above:
+  - The pipeline can succeed with inpainting furniture while managing to keep information about the room.
+    - While this is not perfect, you can see that the structure of the room, roof, windows, and other "rigid" parts of the room are often perserved.
+  - The scene layout generator frequently succeeds in generating feasible scene layouts.
+    - Moreover, it is clear that the initial generated scene image often is much worse in perserving the "rigid" parts of the scene.
+    - E.g. in the first example, the initial stage generates a different roof lamp, which does not get segmented by OwlSam with our class prompts.
+Of course, there are a lot of failure points in these examples, many of which are very obvious but to mention a few:
+  - Unwanted changes to "geometry" of the room
+  - Unrealistic/abnormal objects are generated
+  - Textures and colors not properly perserved for parts not inpainted
+  - ...
+
+
+## Discussion & Outlook
+As stated earlier, this project serves as a very simple PoC for the task of virtual staging. We have managed to show that it is feasible to solve the problem in this toy setting, but building a commercial product would put much stricter requirements, including:
+  - Near perfect perservation of parts of the scene that we don't want to edit.
+  - Better semantic control to ensure reasonable and realistic object shapes and combinations.
+    - This point is as much about making sure that chairs don't have too few legs as it is about making sure that there is no bed in a bathroom.
+  - Possibility to choose different styles for the generated images, e.g. "modern", "Scandinavian", ...
+
+Of course, the points above can be difficult to act on directly, but some work packages I can think of are:
+  - In order to improve generalization in production environments, it would be good to leverage the unpaired dataset aswell. Here the agnostic representation will let us train the second stage ControlNet without even having access to any unstaged samples.
+  - Improve quality of generated staged scenes:
+  -   We could leverage additional information sources in the condition to the control-net. Candidates here include: richer semantic information; e.g. specific semantic classes, "painting", "tv", "chair", etc, will let the network be more precise when inpainting. Without making any specific suggestions, investigating depth as conditional information to the ControlNet also seems promising.
+  -   Improved promts: In this project the inference pipeline simply always used the prompt "a furnished room". There is tons to gain here. One can incorporate semantic- and style information in the prompt, e.g., "a modern living room with two chairs and a table", ... The challenge here is to generate the prompt based on the empty room and additional user specified input. Getting detailed semantics about the number of objects and their relation is likely difficult.
 
 
 
