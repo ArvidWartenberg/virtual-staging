@@ -82,5 +82,46 @@ Of course, the points above can be difficult to act on directly, but some work p
   -   We could leverage additional information sources in the condition to the control-net. Candidates here include: richer semantic information; e.g. specific semantic classes, "painting", "tv", "chair", etc, will let the network be more precise when inpainting. Without making any specific suggestions, investigating depth as conditional information to the ControlNet also seems promising.
   -   Improved promts: In this project the inference pipeline simply always used the prompt "a furnished room". There is tons to gain here. One can incorporate semantic- and style information in the prompt, e.g., "a modern living room with two chairs and a table", ... The challenge here is to generate the prompt based on the empty room and additional user specified input. Getting detailed semantics about the number of objects and their relation is likely difficult.
 
+Thats the start! I really enjoyed working on this problem hope to dive deeper soon.
+
+
+## How to run the code (very dirty code... and very dirty instructions...)
+DISCLAIMER: I did not have time to clean the code up and make sure that it works well out-of-the-box. If you want to attempt to run this - expect that you have to solve some issues along the way.
+After cloning this repo and making sure that you are in the repo root, clone ControlNet:
+
+```git clone https://github.com/lllyasviel/ControlNet```
+
+Next, create the environment (taken from ControlNet):
+
+```
+conda env create -f environment.yaml
+conda activate control
+```
+For some reason I needed to also run `sudo apt-get install libsm6 libxext6 libxrender-dev` to be able to run the ControlNet code. Now, download the pretrained models and put them in the `virtual-staging/models/` folder.
+```
+wget -O v1-5-pruned.ckpt "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned.ckpt?download=true"
+wget -O control_v11p_sd15_inpaint.pth "https://huggingface.co/lllyasviel/ControlNet-v1-1/resolve/main/control_v11p_sd15_inpaint.pth?download=true"
+```
+We can now attach the pretrained inpainting controlnet to the sd1.5 model (here you might need to do some surgery in the script to get the paths right for you):
+```
+python tool_add_control_hack.py 
+```
+
+Delimitation: The next step would be to generate the prompts, agnostic images and datalist. I had an issue here that there were versioning compatability issues with the `transformers` library version between ControlNet and the image captioning model that I was using. As I didn't have time to fix this, the easy way out here is to run `pip install transformers --upgrade`. If you do this you can run the data prep code:
+```
+python prepare_dataset.py
+```
+
+If you ran `pip install transformers --upgrade`, you have to make sure that you are back in the `control` env that we built earlier before you can run the training code. Assuming that you did this, we can now train the two models.
+Here, you have to manually move out the checkpoints from the pytorch lighting logs to the models/ folder and rename them to models/masked_to_staged.ckpt, models/empty_to_staged.ckpt respectively once you are happy with your training.
+```
+python train.py --mode masked_to_staged
+python train.py --mode empty_to_staged
+```
+This is all you need to run the sample inference, so lets do that!
+```
+python inferece.py
+```
+This script will simply dump images in the repo root (very clean, I know ;) ). Hopefully the results are of similar quality to what I presented!
 
 
